@@ -1,0 +1,87 @@
+{
+  "country": "PH",
+  "active_status": "active",
+  "max_ads_per_keyword": 60,
+  "scroll_pause_ms": 2500,
+  "max_scroll_rounds": 25,
+  "headless": true,
+  "niches": {
+    "capsule": [
+      "capsule",
+      "slimming capsule",
+      "weight loss capsule",
+      "vitamin capsule",
+      "supplement capsule"
+    ],
+    "cream": [
+      "whitening cream",
+      "face cream",
+      "anti aging cream",
+      "underarm cream",
+      "acne cream"
+    ],
+    "oil": [
+      "essential oil",
+      "hair oil",
+      "body oil",
+      "ginger oil",
+      "coconut oil"
+    ],
+    "coffee": [
+      "slimming coffee",
+      "weight loss coffee",
+      "keto coffee",
+      "instant coffee",
+      "barako coffee"
+    ],
+    "balm": [
+      "balm philippines",
+      "vapor rub",
+      "white flower",
+      "efficascent",
+      "katinko",
+      "muscle balm",
+      "pain relief balm"
+    ],
+    "herbal_oil": [
+      "herbal oil",
+      "lagundi oil",
+      "tawa tawa oil",
+      "ginger herbal oil",
+      "lemongrass oil",
+      "tanglad oil"
+    ],
+    "oral_drops": [
+      "oral drops kids",
+      "oral drops adult",
+      "vitamin drops",
+      "infant vitamin drops",
+      "immunity drops",
+      "herbal drops"
+    ],
+    "herbal_coffee": [
+      "herbal coffee",
+      "ganoderma coffee",
+      "lingzhi coffee",
+      "reishi coffee",
+      "moringa coffee",
+      "malunggay coffee"
+    ],
+    "serum": [
+      "serum philippines",
+      "face serum",
+      "vitamin c serum",
+      "hyaluronic serum",
+      "whitening serum",
+      "hair growth serum"
+    ],
+    "liquid_spray": [
+      "throat spray",
+      "nasal spray",
+      "anti bacterial spray",
+      "wound spray",
+      "antiseptic spray",
+      "lugol spray"
+    ]
+  }
+}

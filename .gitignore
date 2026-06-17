@@ -1,0 +1,51 @@
+# --- Secrets / credentials (NEVER commit) ---
+.streamlit/secrets.toml
+.env
+*.pem
+*.key
+.hf_token
+
+# --- Database ---
+# Your real DB is db/agent.db. We WANT to commit it so the cloud has data
+# (read-only sharing). Only the temp/WAL files are ignored.
+db/agent.db-journal
+db/agent.db-wal
+db/agent.db-shm
+orbit.db
+orbit.db-journal
+orbit.db-wal
+orbit.db-shm
+
+# --- Scraped artifacts (regenerable, large) ---
+creatives/
+output/
+logs/
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Editor / OS junk ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- Activity / state files (per-user, not shareable) ---
+.onboarding_seen
+.inbox_last_seen
+.activity_log.json
+.page_hints_seen.json
+run_daily.ps1
+
+# --- Local design mockups / backups (not part of the app) ---
+*_preview.html
+*_silver_backup.png
+*_brass_full.png
+*.bak
+
+# --- Build / dist ---
+build/
+dist/
+*.egg-info/
