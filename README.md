@@ -28,5 +28,5 @@ classifies winners, tracks product testing, and generates Taglish ad copy.
 
 ## Notes
 - Scraping requires the local desktop install (Playwright can't run on hosted clouds).
-- AI features need an `ANTHROPIC_API_KEY` set in Space secrets.
-- Set `APP_PASSWORD` in Space secrets to gate access behind a login.
+- AI features need an `ANTHROPIC_API_KEY` set in Streamlit Cloud secrets.
+- Set `APP_PASSWORD` in Streamlit Cloud secrets to gate access behind a login.

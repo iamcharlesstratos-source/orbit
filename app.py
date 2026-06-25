@@ -5083,7 +5083,9 @@ if current_page == "supplier":
                                   type="primary", width="stretch",
                                   disabled=not _sup_query.strip())
 
-    if _sup_run and _sup_query.strip():
+    if IS_CLOUD and _sup_run:
+        st.info("1688 supplier search runs on the local desktop app only (needs Playwright).")
+    elif _sup_run and _sup_query.strip():
         with st.status(f"Searching 1688 for {_sup_query!r}...", state="running",
                         expanded=True) as _sup_status:
             st.write("Launching Playwright (headless Chromium)…")
@@ -6950,7 +6952,9 @@ def _render_marketplace_section(container, source: str, label: str,
         mc3.metric("Total units sold", f"{total_sold:,}")
 
         rc1, rc2 = st.columns([1, 3])
-        if rc1.button(
+        if IS_CLOUD:
+            rc1.info("Enrichment runs on the local desktop app only (needs Playwright).")
+        elif rc1.button(
             f"Run enrichment ({label})", type="primary", width="stretch",
             help=f"Launches Playwright in background. Visits {label} product pages. ~10 min.",
             key=f"enrich_btn_{source}",
@@ -7035,8 +7039,10 @@ if current_page == "tiktok":
     tc3.metric("Avg likes", f"{int(sum(a.get('likes') or 0 for a in tt_ads) / len(tt_ads)):,}" if tt_ads else "—")
 
     tk1, tk2 = st.columns([1, 3])
-    if tk1.button("Scrape TikTok now", type="primary", width="stretch",
-                   help="~3-5 minutes. Scrapes top ads for each niche."):
+    if IS_CLOUD:
+        tk1.info("TikTok scraping runs on the local desktop app only (needs Playwright).")
+    elif tk1.button("Scrape TikTok now", type="primary", width="stretch",
+                     help="~3-5 minutes. Scrapes top ads for each niche."):
         subprocess.Popen(
             [sys.executable, "-u", str(ROOT / "main.py"), "--tiktok"],
             cwd=str(ROOT),
@@ -7304,9 +7310,14 @@ if current_page == "bestsellers":
         )
     with _bs_run_r:
         st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-        if st.button("Scrape bestsellers", key="bs_run_btn", type="primary",
-                     width="stretch",
-                     help="~30-90 seconds per platform per keyword. Headless Playwright."):
+        if IS_CLOUD:
+            st.info(
+                "Bestsellers scraping runs on the local desktop app only (needs "
+                "Playwright). This cloud view shows previously captured data."
+            )
+        elif st.button("Scrape bestsellers", key="bs_run_btn", type="primary",
+                       width="stretch",
+                       help="~30-90 seconds per platform per keyword. Headless Playwright."):
             with st.spinner(f"Scraping {len(_bs_platforms)} platform(s)..."):
                 import bestsellers_scraper
                 _records = bestsellers_scraper.scrape_all(

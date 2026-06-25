@@ -49,3 +49,8 @@ run_daily.ps1
 build/
 dist/
 *.egg-info/
+
+# --- Python virtual envs (local only) ---
+.venv/
+venv/
+env/

@@ -313,7 +313,8 @@ def extract_ads_from_page(page: Page, keyword: str, niche: str) -> list[Ad]:
                 media_url=media_url,
                 scraped_at=datetime.now().isoformat(timespec="seconds"),
             ))
-        except Exception:
+        except Exception as e:
+            log.debug("card %d parse failed (skipped): %s", i, e)
             continue
     return ads
 
@@ -457,7 +458,10 @@ def run(config: dict, niches: list[str]) -> dict[str, list[Ad]]:
         context.close()
         browser.close()
 
-    if total_keywords >= 2 and empty_keywords >= max(2, total_keywords // 3):
+    if empty_keywords and (
+        empty_keywords >= max(2, total_keywords // 3)
+        or (total_keywords < 6 and empty_keywords >= 1)
+    ):
         log.warning(
             "HEALTH CHECK: %d/%d keywords returned 0 ads — Meta selectors may be stale or you're being throttled.",
             empty_keywords, total_keywords,
