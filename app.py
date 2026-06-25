@@ -50,6 +50,10 @@ IS_CLOUD = bool(
     os.environ.get("STREAMLIT_RUNTIME") == "cloud"
     or os.environ.get("DEPLOYMENT_LABEL")
     or os.environ.get("ORBIT_CLOUD_MODE")
+    # Streamlit Community Cloud doesn't reliably set an env flag, but it always
+    # runs the app from /mount/src/<repo>. Detect that so the local-only scrape
+    # guards activate automatically on the hosted site.
+    or str(ROOT).startswith("/mount/src")
 )
 
 
