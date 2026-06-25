@@ -18,7 +18,8 @@ def fetch_trend(query: str, months: int = 12, geo: str = "PH") -> dict:
         return out
 
     try:
-        py = TrendReq(hl="en-US", tz=480)
+        py = TrendReq(hl="en-US", tz=480, timeout=(10, 25),
+                      retries=2, backoff_factor=0.4)
         timeframe = f"today {months}-m"
         py.build_payload([query], cat=0, timeframe=timeframe, geo=geo, gprop="")
         df = py.interest_over_time()
@@ -33,6 +34,41 @@ def fetch_trend(query: str, months: int = 12, geo: str = "PH") -> dict:
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {e}"
         log.debug("Trends fetch failed for %r: %s", query, e)
+    return out
+
+
+def fetch_multi(queries: list[str], months: int = 12, geo: str = "PH") -> dict:
+    """Compare PH search interest for up to 5 queries in a SINGLE Google Trends
+    request (Google normalizes them against each other, so values are directly
+    comparable). One request = low rate-limit risk. Returns
+    {labels: [...], series: {query: [int 0-100]}, error: str|None}."""
+    out: dict = {"labels": [], "series": {}, "error": None}
+    queries = [q.strip() for q in (queries or []) if q and q.strip()][:5]
+    if not queries:
+        out["error"] = "no queries"
+        return out
+    try:
+        from pytrends.request import TrendReq
+    except ImportError:
+        out["error"] = "pytrends not installed"
+        return out
+    try:
+        py = TrendReq(hl="en-US", tz=480, timeout=(10, 25),
+                      retries=2, backoff_factor=0.4)
+        py.build_payload(queries, cat=0, timeframe=f"today {months}-m", geo=geo, gprop="")
+        df = py.interest_over_time()
+        if df is None or df.empty:
+            out["error"] = "no data for these queries in PH"
+            return out
+        out["labels"] = [ts.strftime("%Y-%m") for ts in df.index]
+        for q in queries:
+            if q in df.columns:
+                out["series"][q] = [int(v) for v in df[q].tolist()]
+        if not out["series"]:
+            out["error"] = "no comparable data returned"
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+        log.debug("Trends multi fetch failed for %r: %s", queries, e)
     return out
 
 

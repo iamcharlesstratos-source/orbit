@@ -439,6 +439,7 @@ _NAV_SECTIONS = [
     ]),
     ("Validate", [
         ("competitors",   "Competitors",     "◎"),
+        ("trends",        "Trends",          "📈"),
     ]),
     ("Source", [
         ("supplier",      "Supplier",        "⚙"),
@@ -467,6 +468,7 @@ _NAV_MAT = {
     "tiktok": ":material/music_note:",
     "bestsellers": ":material/emoji_events:",
     "competitors": ":material/groups:",
+    "trends": ":material/trending_up:",
     "supplier": ":material/factory:",
     "notifications": ":material/notifications:",
     "history": ":material/history:",
@@ -6691,10 +6693,62 @@ if current_page == "swipe":
 # ---- Trends ----
 
 if current_page == "trends":
-    st.subheader("Trends across runs")
+    st.subheader("Trends")
+    st.caption("Google Trends search demand (PH) — kung saan papunta ang market — "
+               "plus ang sarili mong ad-volume trend across scrapes.")
+
+    # ===== Google Trends: niche search demand (PH) =====
+    st.markdown("##### 🔍 Niche search demand · Google Trends (PH)")
+    _gt_niches = list(load_config().get("niches", {}).keys())[:5]
+    st.caption(
+        "Inihahambing ang Google search interest ng mga niche mo sa Pilipinas sa "
+        "nakaraang 12 buwan — pataas = lumalaking demand. Nagra-rate-limit ang "
+        "Google Trends, kaya fetch nang dahan-dahan (mananatili ang resulta hangga't di mo ina-refetch)."
+    )
+    if st.button("📈 Fetch niche trends (PH)", key="gt_niche_btn", type="primary"):
+        import trends as _gtmod
+        with st.spinner("Calling Google Trends…"):
+            st.session_state["_gt_niche"] = _gtmod.fetch_multi(_gt_niches, months=12, geo="PH")
+    _gtn = st.session_state.get("_gt_niche")
+    if _gtn:
+        if _gtn.get("error"):
+            st.warning("⚠ Google Trends: " + str(_gtn["error"])
+                       + " — madalas rate-limited; subukan ulit mamaya.")
+        elif _gtn.get("series"):
+            import trends as _gtmod2
+            _gdf = pd.DataFrame(_gtn["series"], index=_gtn["labels"])
+            st.line_chart(_gdf, height=240)
+            _gcols = st.columns(len(_gtn["series"]))
+            for _gi, (_q, _vals) in enumerate(_gtn["series"].items()):
+                _avg = round(sum(_vals) / len(_vals), 0) if _vals else 0
+                _gcols[_gi].metric(_q, f"{_avg:.0f}/100",
+                                   _gtmod2.trend_summary({"values": _vals}), delta_color="off")
+
+    st.divider()
+    # ===== Google Trends: any keyword / brand =====
+    st.markdown("##### 🔎 Search any keyword / brand · Google Trends (PH)")
+    _gkw = st.text_input("Keyword or brand", key="gt_kw",
+                         placeholder="hal. ginger oil, slimming coffee, lagundi",
+                         label_visibility="collapsed")
+    if st.button("Fetch keyword trend", key="gt_kw_btn") and _gkw.strip():
+        import trends as _gtmod3
+        with st.spinner("Fetching…"):
+            st.session_state["_gt_kw_res"] = _gtmod3.fetch_trend(_gkw.strip(), months=12, geo="PH")
+    _gkr = st.session_state.get("_gt_kw_res")
+    if _gkr:
+        if _gkr.get("error"):
+            st.caption("⚠ " + str(_gkr["error"]))
+        elif _gkr.get("values"):
+            import trends as _gtmod4
+            st.line_chart(pd.DataFrame({"interest": _gkr["values"]}, index=_gkr["labels"]), height=200)
+            st.caption(f"Avg **{_gkr['avg']}/100** · {_gtmod4.trend_summary(_gkr)} · (0 = walang search, 100 = peak)")
+
+    st.divider()
+    # ===== Internal: your ad-volume trend across runs (existing) =====
+    st.markdown("##### 📊 Your ad-volume trend across runs")
     all_runs = get_runs(limit=30)
     if len(all_runs) < 2:
-        st.info("Need at least 2 runs for trends. Schedule daily runs via `register_daily_task.ps1`.")
+        st.info("Need at least 2 runs for the internal trend. Schedule daily runs via `register_daily_task.ps1`.")
     else:
         per_run_niche: list[dict] = []
         for r in all_runs:
