@@ -338,7 +338,15 @@ def scrape_keyword(
     try:
         page.wait_for_selector("text=/Library ID:/", timeout=15000)
     except PWTimeout:
-        log.warning("     no ads found for %r", keyword)
+        # Page loaded but zero "Library ID:" anchors. Either there genuinely are
+        # no ads for this keyword, OR Meta changed its DOM and this core selector
+        # is stale. Surface BOTH possibilities + the URL so it's diagnosable —
+        # otherwise a broken selector looks identical to "no winners found".
+        log.warning(
+            "     0 'Library ID:' matches for %r — no active ads OR Meta changed "
+            "its layout (core selector may be STALE). Verify in a browser: %s",
+            keyword, url,
+        )
         return []
 
     seen_count = 0

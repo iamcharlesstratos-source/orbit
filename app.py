@@ -347,6 +347,17 @@ st.set_page_config(
 _require_password_gate()
 
 
+# B0: on the ephemeral cloud, merge a committed cloud_metadata.json back into the
+# DB once per session so stars / notes / status saved from the local desktop app
+# survive Streamlit redeploys. The local desktop is authoritative, so skip there.
+if IS_CLOUD and not st.session_state.get("_cloud_meta_merged"):
+    try:
+        db.import_brand_meta_json()
+    except Exception:
+        pass
+    st.session_state["_cloud_meta_merged"] = True
+
+
 # ---------- Theme palettes ----------
 
 _DARK = {
@@ -2374,6 +2385,14 @@ def _winner_score(res: dict) -> dict:
     else:
         long_pts = round(days / 14 * 9) if days else 0
     vel_pts = min(20, active * 4)
+    # Momentum tilt (A2): a brand actively scaling its live ad count is a
+    # higher-probability bet than a steady one; a cooling brand is lower. The
+    # momentum emoji is already computed in _brand_research — now it counts.
+    _mom = str(res.get("momentum", ""))
+    if "Scaling" in _mom:
+        vel_pts = min(20, round(vel_pts * 1.2))
+    elif "Cooling" in _mom:
+        vel_pts = round(vel_pts * 0.8)
     pers_pts = min(15, runs * 3)
     src_pts = min(15, 5 + (5 if has_mp else 0) + (5 if srcs >= 3 else 0))
     if sold >= 5000:
@@ -4063,9 +4082,25 @@ with st.sidebar:
             _clear_brand_caches()
             st.rerun()
         st.caption(
-            "📡 Cloud view-only · Scrape from your local desktop install, then "
-            "commit the updated `orbit.db` to GitHub to refresh this view."
+            "📡 Cloud view-only · Scrape on your local desktop, then commit the "
+            "updated DB to refresh this view."
         )
+        st.caption(
+            "⚠️ Stars / notes / status set here are TEMPORARY — they reset on the "
+            "next redeploy. Save them below, then re-import on your local app."
+        )
+        try:
+            import json as _cm_json
+            _meta_blob = _cm_json.dumps(list(db.all_brand_meta().values()),
+                                        indent=2, ensure_ascii=False)
+            st.download_button(
+                "⬇ Save my stars/notes", _meta_blob, "cloud_metadata.json",
+                "application/json", width="stretch",
+                help="Download your cloud edits, drop this file in your local "
+                     "project folder, and commit it to make them permanent.",
+            )
+        except Exception:
+            pass
     else:
         _act1, _act2 = st.columns(2)
         if _act1.button("⟳ Scrape", width="stretch", type="primary",

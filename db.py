@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -19,6 +20,21 @@ log = logging.getLogger("pra.db")
 ROOT = Path(__file__).resolve().parent
 DB_DIR = ROOT / "db"
 DB_PATH = DB_DIR / "agent.db"
+
+# Committable JSON snapshot of brand_meta (stars / status / notes). On the local
+# desktop this is auto-refreshed on every edit so it can be committed alongside
+# the DB; on the (ephemeral) cloud it is merged back on boot so user research
+# survives redeploys. See export_brand_meta_json / import_brand_meta_json.
+CLOUD_META_PATH = ROOT / "cloud_metadata.json"
+
+# Mirror app.py's cloud detection so db-layer auto-export only runs locally
+# (the cloud filesystem is read-only/ephemeral — writing there is pointless).
+_IS_CLOUD = bool(
+    os.environ.get("STREAMLIT_RUNTIME") == "cloud"
+    or os.environ.get("DEPLOYMENT_LABEL")
+    or os.environ.get("ORBIT_CLOUD_MODE")
+    or str(ROOT).startswith("/mount/src")
+)
 
 
 SCHEMA = """
@@ -556,6 +572,63 @@ def all_brand_meta() -> dict[str, dict]:
         return {r["brand"]: dict(r) for r in rows}
 
 
+def export_brand_meta_json(path: Path | None = None) -> int:
+    """Dump brand_meta (stars / status / notes / competitor) to a readable JSON
+    file. Committing this alongside the repo carries your research to the cloud
+    without depending on the opaque binary .db. Returns rows written."""
+    path = path or CLOUD_META_PATH
+    try:
+        with connect() as conn:
+            rows = [dict(r) for r in conn.execute("SELECT * FROM brand_meta").fetchall()]
+        path.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+        return len(rows)
+    except Exception as e:
+        log.warning("brand_meta export failed: %s", e)
+        return 0
+
+
+def import_brand_meta_json(path: Path | None = None) -> int:
+    """Merge a committed cloud_metadata.json back into brand_meta. Run on cloud
+    boot so stars/notes/status committed from the local app survive the
+    ephemeral DB. The JSON is authoritative for the brands it lists. Returns
+    rows merged."""
+    path = path or CLOUD_META_PATH
+    try:
+        if not path.exists():
+            return 0
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            return 0
+        init_db()
+        n = 0
+        with connect() as conn:
+            for r in data:
+                brand = (r.get("brand") or "").strip()
+                if not brand:
+                    continue
+                conn.execute(
+                    "INSERT INTO brand_meta (brand, starred, status, notes, competitor, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(brand) DO UPDATE SET "
+                    "starred=excluded.starred, status=excluded.status, notes=excluded.notes, "
+                    "competitor=excluded.competitor, updated_at=excluded.updated_at",
+                    (
+                        brand,
+                        int(r.get("starred", 0) or 0),
+                        r.get("status", "") or "",
+                        r.get("notes", "") or "",
+                        int(r.get("competitor", 0) or 0),
+                        r.get("created_at") or None,
+                        r.get("updated_at") or None,
+                    ),
+                )
+                n += 1
+        return n
+    except Exception as e:
+        log.warning("brand_meta import failed: %s", e)
+        return 0
+
+
 def list_starred_brands() -> list[str]:
     with connect() as conn:
         rows = conn.execute(
@@ -597,6 +670,10 @@ def upsert_brand_meta(brand: str, **fields) -> None:
                 values.append(now)
                 values.append(brand)
                 conn.execute(f"UPDATE brand_meta SET {', '.join(updates)} WHERE brand = ?", values)
+    # Keep the committable JSON snapshot fresh on the local desktop so the cloud
+    # view can be refreshed by committing it. No-op on the ephemeral cloud FS.
+    if not _IS_CLOUD:
+        export_brand_meta_json()
 
 
 def toggle_star(brand: str) -> bool:
@@ -625,6 +702,36 @@ def list_competitor_brands() -> list[str]:
         except Exception:
             return []
     return [r["brand"] for r in rows]
+
+
+def niche_brand_delta() -> dict[str, dict]:
+    """Saturation signal: for each niche, compare the count of unique brands in
+    the latest scrape run vs the previous one. A big jump = more competitors
+    crowding in = margin pressure. Returns {niche: {prev, curr, pct}}."""
+    init_db()
+    with connect() as conn:
+        runs = [r["run_id"] for r in conn.execute(
+            "SELECT run_id FROM runs ORDER BY run_id DESC LIMIT 2"
+        ).fetchall()]
+        if len(runs) < 2:
+            return {}
+        curr_id, prev_id = runs[0], runs[1]
+
+        def _counts(rid: int) -> dict[str, int]:
+            rows = conn.execute(
+                "SELECT niche, COUNT(DISTINCT brand) AS c FROM ads "
+                "WHERE run_id = ? AND brand IS NOT NULL AND brand != '' GROUP BY niche",
+                (rid,),
+            ).fetchall()
+            return {r["niche"]: r["c"] for r in rows}
+
+        curr, prev = _counts(curr_id), _counts(prev_id)
+    out: dict[str, dict] = {}
+    for niche, c in curr.items():
+        p = prev.get(niche, 0)
+        pct = ((c - p) / p * 100.0) if p else (100.0 if c else 0.0)
+        out[niche] = {"prev": p, "curr": c, "pct": round(pct, 1)}
+    return out
 
 
 def cleanup_empty_runs(min_age_minutes: int = 30) -> int:
