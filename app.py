@@ -3901,6 +3901,33 @@ with st.sidebar:
         all_niches = list(load_config().get("niches", {}).keys())
         if not all_niches:
             all_niches = ["capsule", "cream", "oil", "coffee"]
+        # A8: one-click filter presets — set the filter session keys then rerun
+        # so the widgets below adopt them (same safe pattern as saved searches).
+        _pc1, _pc2, _pc3 = st.columns(3)
+        if _pc1.button("🎯 My niches", width="stretch",
+                       help="Active, PH-confident, in-niche ads across all your niches"):
+            st.session_state.update({
+                "filter_niche": list(all_niches), "filter_min_days": 30,
+                "filter_active_only": True, "filter_ph_only": True,
+                "filter_on_niche": True, "filter_has_sales": False,
+            })
+            st.rerun()
+        if _pc2.button("🏆 90+ winners", width="stretch",
+                       help="Proven: active ads running 90+ days"):
+            st.session_state.update({
+                "filter_niche": [], "filter_min_days": 90,
+                "filter_active_only": True, "filter_ph_only": True,
+                "filter_on_niche": False, "filter_has_sales": False,
+            })
+            st.rerun()
+        if _pc3.button("🛒 Marketplace", width="stretch",
+                       help="Active ads with marketplace price / sales data"):
+            st.session_state.update({
+                "filter_min_days": 30, "filter_active_only": True,
+                "filter_has_sales": True, "filter_ph_only": False,
+                "filter_on_niche": False,
+            })
+            st.rerun()
         niche_filter = st.multiselect(
             "Niche", all_niches, default=[], key="filter_niche",
             help="Restrict to specific niches. Empty = show all niches.",
@@ -5046,6 +5073,25 @@ if current_page == "radar":
         _rs2.metric("🔥 Fresh", f"{_fresh_n:,}", delta="≤21 days — early movers", delta_color="off")
         _rs3.metric("🏆 Proven", f"{_proven_n:,}", delta=">60 days — safe bets", delta_color="off")
         st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+        # A7: saturation spikes — flag niches where unique competitors jumped
+        # run-on-run (more sellers crowding in = margin pressure ahead).
+        try:
+            _sat_delta = db.niche_brand_delta()
+            _sat_spikes = sorted(
+                [(n, d) for n, d in _sat_delta.items()
+                 if d.get("pct", 0) >= 30 and d.get("curr", 0) >= 3],
+                key=lambda x: -x[1]["pct"],
+            )
+        except Exception:
+            _sat_spikes = []
+        if _sat_spikes:
+            _sat_msg = " · ".join(
+                f"{n} +{d['pct']:.0f}% ({d['prev']}→{d['curr']})"
+                for n, d in _sat_spikes[:4]
+            )
+            st.warning("⚠️ Saturation spike vs. last scrape — dumadami ang "
+                       "kakompetensya sa: " + _sat_msg)
 
         # ---- Saturation: competing brands per niche (Open = low competition) ----
         _niche_sat = Counter(str(d["niche"]).title() for d in _radar if d.get("niche") and d["niche"] != "—")

@@ -167,7 +167,13 @@ def generate(
         resp = client.messages.create(
             model=model,
             max_tokens=1500,
-            system=system,
+            # A6: cache the (large) system prompt so Regenerate / repeat
+            # generations within the cache window don't re-bill the full prompt.
+            system=[{
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"},
+            }],
             messages=[{"role": "user", "content": user_msg}],
         )
         text = resp.content[0].text if resp.content else ""

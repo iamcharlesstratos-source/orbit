@@ -76,6 +76,12 @@ def build_daily_summary() -> str:
         return "📭 No runs in DB yet — nothing to summarise."
 
     latest = runs[0]
+    # A11: brands you've tagged as competitors are noise in a "new winners"
+    # alert — keep a set to filter them out below.
+    try:
+        _competitors = {b.casefold() for b in db.list_competitor_brands()}
+    except Exception:
+        _competitors = set()
     all_latest = db.ads_for_run(latest["run_id"])
     n_total = len(all_latest)
     n_active = sum(1 for a in all_latest if a.get("is_active"))
@@ -111,7 +117,7 @@ def build_daily_summary() -> str:
         if (a.get("days_running") or 0) < 90:
             continue
         b = a.get("brand") or a.get("page_name")
-        if not b:
+        if not b or b.casefold() in _competitors:
             continue
         entry = top_brands_agg.setdefault(b, {
             "brand": b, "niche": a.get("niche"),
@@ -138,7 +144,7 @@ def build_daily_summary() -> str:
                 if pa is None or (pa.get("days_running") or 0) >= 30:
                     continue
                 b = a.get("brand") or a.get("page_name") or "?"
-                if b in seen_brand:
+                if b in seen_brand or b.casefold() in _competitors:
                     continue
                 seen_brand.add(b)
                 new_winners.append(a)
@@ -179,6 +185,21 @@ def build_daily_summary() -> str:
         lines.append("📈 *Niche heat (active brands)*")
         for niche, brands in sorted(by_niche_brands.items(), key=lambda x: -len(x[1])):
             lines.append(f"• {niche}: {len(brands)} brands, {by_niche_active[niche]} active ads")
+        lines.append("")
+    # A7: saturation spikes — niches where unique competitors jumped run-on-run.
+    try:
+        _sat = db.niche_brand_delta()
+        _spikes = sorted(
+            [(n, d) for n, d in _sat.items()
+             if d.get("pct", 0) >= 30 and d.get("curr", 0) >= 3],
+            key=lambda x: -x[1]["pct"],
+        )
+    except Exception:
+        _spikes = []
+    if _spikes:
+        lines.append("⚠️ *Saturation spikes (more competitors)*")
+        for n, d in _spikes[:5]:
+            lines.append(f"• {n}: {d['prev']}→{d['curr']} brands (+{d['pct']:.0f}%)")
         lines.append("")
     if top3:
         lines.append("🏆 *Top sustained winners*")

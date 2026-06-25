@@ -35,16 +35,32 @@ def _classify_one(client, text: str, model: str) -> dict | None:
         resp = client.messages.create(
             model=model,
             max_tokens=120,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": text[:1500]}],
+            # A6: cache the system prompt — it's identical for every ad in the
+            # batch, so calls after the first reuse it (savings scale with prompt
+            # size; harmless if below the cache minimum).
+            system=[{
+                "type": "text",
+                "text": SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }],
+            # A5: prefill the assistant turn with "{" so Claude emits pure JSON —
+            # no markdown fences to strip, no JSONDecodeError killing the batch.
+            messages=[
+                {"role": "user", "content": text[:1500]},
+                {"role": "assistant", "content": "{"},
+            ],
         )
         body = resp.content[0].text.strip() if resp.content else ""
-        # Strip code fences if model added them
-        if body.startswith("```"):
-            body = body.strip("`").strip()
-            if body.startswith("json"):
-                body = body[4:].strip()
-        return json.loads(body)
+        if not body.startswith("{"):
+            body = "{" + body  # restore the prefilled brace
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            # last-resort: strip code fences if the model still wrapped it
+            b = body.strip().strip("`").strip()
+            if b.startswith("json"):
+                b = b[4:].strip()
+            return json.loads(b)
     except Exception as e:
         log.debug("LLM classify failed: %s", e)
         return None
