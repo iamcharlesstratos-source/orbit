@@ -1859,6 +1859,23 @@ def get_ads(run_id: int) -> list[dict]:
     return db.ads_for_run(run_id)
 
 
+@st.cache_data(ttl=60)
+def get_all_brand_meta() -> dict[str, dict]:
+    """Cached brand_meta (A3) — called several times per rerun on brand-heavy
+    pages. Invalidated by _save_brand_meta() on edits and _clear_brand_caches()."""
+    return db.all_brand_meta()
+
+
+def _save_brand_meta(brand: str, **fields) -> None:
+    """Write a brand_meta edit and immediately invalidate the cached snapshot so
+    stars / status / notes reflect instantly (A3)."""
+    db.upsert_brand_meta(brand, **fields)
+    try:
+        get_all_brand_meta.clear()
+    except Exception:
+        pass
+
+
 def _agent_narrative(active_run_id: int, runs_list: list[dict], curr_rows: list[dict]) -> str:
     """Produce an analyst-style 2-3 sentence brief based on the current data."""
     if not curr_rows:
@@ -2509,7 +2526,8 @@ def _research_hero_html(res: dict, score: dict) -> str:
 def _clear_brand_caches() -> None:
     """Invalidate all cross-run brand caches after the underlying ads/runs data changes
     (Refresh, classify, backfill) so Winner Score / niche / category never go stale."""
-    for _fn in (_brand_research, _brand_history, _brand_price_history, _brands_trendlines):
+    for _fn in (_brand_research, _brand_history, _brand_price_history,
+                _brands_trendlines, get_all_brand_meta):
         try:
             _fn.clear()
         except Exception:
@@ -3260,10 +3278,10 @@ def _render_brand_detail_dialog(brand: str, brand_row: dict, ads_for_brand: list
     if col_star.button(star_label, width="stretch", type=("secondary" if is_starred else "primary"),
                         key=f"star_btn_{brand}"):
         if is_starred:
-            db.upsert_brand_meta(brand, starred=0)
+            _save_brand_meta(brand, starred=0)
         else:
             # Entering the shortlist enters the pipeline at 'Researching' (matches Radar ★).
-            db.upsert_brand_meta(brand, starred=1, status=(current_status or "researching"))
+            _save_brand_meta(brand, starred=1, status=(current_status or "researching"))
         log_activity("unstarred" if is_starred else "starred", brand)
         st.rerun()
     comp_label = "◎ Competitor ✓" if _is_competitor else "◎ Mark competitor"
@@ -3287,7 +3305,7 @@ def _render_brand_detail_dialog(brand: str, brand_row: dict, ads_for_brand: list
         label_visibility="collapsed",
     )
     if new_status != current_status:
-        db.upsert_brand_meta(brand, status=new_status)
+        _save_brand_meta(brand, status=new_status)
         st.toast(f"Status: {new_status or 'cleared'}", icon=None)
         st.rerun()
 
@@ -3302,7 +3320,7 @@ def _render_brand_detail_dialog(brand: str, brand_row: dict, ads_for_brand: list
         label_visibility="collapsed",
     )
     if st.button("Save notes", key=f"notes_save_{brand}"):
-        db.upsert_brand_meta(brand, notes=notes_val)
+        _save_brand_meta(brand, notes=notes_val)
         st.toast("Notes saved", icon=None)
 
     _lp_col, _test_col = st.columns([3, 2])
@@ -4775,7 +4793,7 @@ if current_page == "shortlist":
     import hashlib as _slhash
     st.caption("Ang mga na-shortlist mong products — i-organize sa pipeline: Researching → Validated → Sourced → Decided. Ito ang decision hub mo.")
 
-    _meta_all = db.all_brand_meta()
+    _meta_all = get_all_brand_meta()
     _starred_meta = {b: m for b, m in _meta_all.items() if m.get("starred")}
 
     if not _starred_meta:
@@ -4934,7 +4952,7 @@ if current_page == "shortlist":
                     )
                     if st.button("🔬 Research deep-dive", key="sl_research_" + _bk, width="stretch"):
                         _sl_open = _it
-                    _cc1, _cc2, _cc3 = st.columns([3, 1, 1])
+                    _cc1, _cc2, _cc3, _cc4 = st.columns([3, 1, 1, 1])
                     _new_stage = _cc1.selectbox(
                         "Stage", _stage_select_opts,
                         index=_stage_select_opts.index(_stage),
@@ -4943,7 +4961,7 @@ if current_page == "shortlist":
                         label_visibility="collapsed",
                     )
                     if _new_stage != _stage:
-                        db.upsert_brand_meta(_brand, status=_new_stage)
+                        _save_brand_meta(_brand, status=_new_stage)
                         st.toast(_brand + " → " + (_STATUS_LABEL.get(_new_stage, "Unstaged") if _new_stage else "Unstaged"))
                         st.rerun()
                     with _cc2.popover("📝", help="Notes"):
@@ -4954,14 +4972,26 @@ if current_page == "shortlist":
                             label_visibility="collapsed",
                         )
                         if st.button("Save notes", key="sl_notes_save_" + _bk, type="primary", width="stretch"):
-                            db.upsert_brand_meta(_brand, notes=_nv)
+                            _save_brand_meta(_brand, notes=_nv)
                             st.toast("Notes saved")
                             st.rerun()
                     if _cc3.button("☆", key="sl_rm_" + _bk, help="Remove from shortlist", width="stretch"):
-                        db.upsert_brand_meta(_brand, starred=0)
+                        _save_brand_meta(_brand, starred=0)
                         log_activity("unstarred", _brand)
                         st.toast(_brand + " removed from shortlist")
                         st.rerun()
+                    # A10: inline source links — jump straight to Shopee/Lazada/1688
+                    # for this brand without opening the full research dialog.
+                    with _cc4.popover("🛒", help="Source this product"):
+                        from urllib.parse import quote_plus as _qp_sl
+                        _qsl = _qp_sl(_brand)
+                        st.link_button("Shopee PH",
+                            "https://shopee.ph/search?keyword=" + _qsl, width="stretch")
+                        st.link_button("Lazada PH",
+                            "https://www.lazada.com.ph/catalog/?q=" + _qsl, width="stretch")
+                        st.link_button("1688 supplier",
+                            "https://s.1688.com/selloffer/offer_search.htm?keywords=" + _qsl,
+                            width="stretch")
 
         # ---- Open the full research deep-dive dialog (deferred to top level) ----
         if _sl_open:
@@ -5097,7 +5127,7 @@ if current_page == "radar":
                 st.markdown(_card, unsafe_allow_html=True)
                 if st.button("★ Shortlist", key="radar_star_" + str(_ri), width="stretch"):
                     _exm = db.get_brand_meta(_d["brand"]) or {}
-                    db.upsert_brand_meta(
+                    _save_brand_meta(
                         _d["brand"], starred=1,
                         status=(_canon_status(_exm.get("status", "")) or "researching"),
                     )
@@ -5777,7 +5807,7 @@ if current_page == "fb_ads":
         )
 
     # ---- Pre-compute brand_rows so we can render hero + table both ----
-    _all_meta_pre = db.all_brand_meta()
+    _all_meta_pre = get_all_brand_meta()
     _by_brand_pre: dict[str, dict] = {}
     for r in filtered:
         b = (r.get("brand") or r.get("page_name") or "?").strip()
@@ -6012,7 +6042,7 @@ if current_page == "fb_ads":
             )
     else:
         # ---- Pre-format columns for premium display ----
-        _all_meta = db.all_brand_meta()
+        _all_meta = get_all_brand_meta()
         _max_score = max((b.get("score_normalized") or 0) for b in brand_rows) or 1
 
         # Niche prefix — subtle bullet for visual texture
@@ -6114,7 +6144,9 @@ if current_page == "fb_ads":
         _has_any_cat = "category" in df.columns and df["category"].astype(str).str.strip().ne("").any()
         _has_any_loc = "location" in df.columns and df["location"].astype(str).str.strip().ne("").any()
 
-        order = ["_starred", "brand"]
+        # A4: longevity ("Days") IS the thesis — surface it right after the brand
+        # with its active status beside it, instead of burying it behind score.
+        order = ["_starred", "brand", "max_days_running", "any_active"]
         # Category column (replaces niche when classifier has data)
         if _has_any_cat:
             order += ["category", "sub_category"]
@@ -6122,8 +6154,7 @@ if current_page == "fb_ads":
             order.append("niche")
         if _has_any_loc:
             order.append("location")
-        order += ["_status", "ad_count", "score_normalized",
-                  "max_days_running", "any_active", "trendline"]
+        order += ["_status", "ad_count", "score_normalized", "trendline"]
         if has_any_creative:
             order.append("has_creative")
         if has_any_marketplace:
@@ -6283,13 +6314,13 @@ if current_page == "fb_ads":
                 if bc1.button("⭐ Star all", key="bulk_star", width="stretch",
                                 help="Add all selected brands to your shortlist"):
                     for _b in _bulk_brands:
-                        db.upsert_brand_meta(_b, starred=1)
+                        _save_brand_meta(_b, starred=1)
                     st.success(f"Starred {len(_bulk_brands)} brand{'s' if len(_bulk_brands) != 1 else ''}.")
                     st.rerun()
                 if bc2.button("☆ Unstar all", key="bulk_unstar", width="stretch",
                                 help="Remove all selected brands from shortlist"):
                     for _b in _bulk_brands:
-                        db.upsert_brand_meta(_b, starred=0)
+                        _save_brand_meta(_b, starred=0)
                     st.success(f"Unstarred {len(_bulk_brands)} brand{'s' if len(_bulk_brands) != 1 else ''}.")
                     st.rerun()
                 _bulk_status_options = [""] + _HUNT_PIPELINE
@@ -6307,7 +6338,7 @@ if current_page == "fb_ads":
                     help="Apply the selected status to all selected brands",
                 ):
                     for _b in _bulk_brands:
-                        db.upsert_brand_meta(_b, status=_bulk_new_status)
+                        _save_brand_meta(_b, status=_bulk_new_status)
                     st.success(f"Set status '{_bulk_new_status}' for {len(_bulk_brands)} brand{'s' if len(_bulk_brands) != 1 else ''}.")
                     st.rerun()
 
